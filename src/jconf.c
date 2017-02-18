@@ -1,7 +1,7 @@
 /*
  * jconf.c - Parse the JSON format config file
  *
- * Copyright (C) 2013 - 2016, Max Lv <max.c.lv@gmail.com>
+ * Copyright (C) 2013 - 2017, Max Lv <max.c.lv@gmail.com>
  *
  * This file is part of the shadowsocks-libev.
  * shadowsocks-libev is free software; you can redistribute it and/or modify
@@ -32,14 +32,21 @@
 
 #include <libcork/core.h>
 
-static char *to_string(const json_value *value)
+#define check_json_value_type(value, expected_type, message) \
+    do { \
+        if ((value)->type != (expected_type)) \
+            FATAL((message)); \
+    } while(0)
+
+static char *
+to_string(const json_value *value)
 {
     if (value->type == json_string) {
         return ss_strndup(value->u.string.ptr, value->u.string.length);
     } else if (value->type == json_integer) {
         return strdup(ss_itoa(value->u.integer));
     } else if (value->type == json_null) {
-        return "null";
+        return NULL;
     } else {
         LOGE("%d", value->type);
         FATAL("Invalid config format.");
@@ -47,20 +54,25 @@ static char *to_string(const json_value *value)
     return 0;
 }
 
-void free_addr(ss_addr_t *addr)
+void
+free_addr(ss_addr_t *addr)
 {
     ss_free(addr->host);
     ss_free(addr->port);
 }
 
-void parse_addr(const char *str, ss_addr_t *addr)
+void
+parse_addr(const char *str_in, ss_addr_t *addr)
 {
+    if (str_in == NULL) return;
+
     int ipv6 = 0, ret = -1, n = 0;
     char *pch;
+    char *str = strdup(str_in);
 
     struct cork_ip ip;
     if (cork_ip_init(&ip, str) != -1) {
-        addr->host = strdup(str);
+        addr->host = str;
         addr->port = NULL;
         return;
     }
@@ -93,9 +105,12 @@ void parse_addr(const char *str, ss_addr_t *addr)
         }
         addr->port = strdup(str + ret + 1);
     }
+
+    free(str);
 }
 
-jconf_t *read_jconf(const char *file)
+jconf_t *
+read_jconf(const char *file)
 {
     static jconf_t conf;
 
@@ -150,7 +165,9 @@ jconf_t *read_jconf(const char *file)
                             break;
                         }
                         json_value *v = value->u.array.values[j];
-                        parse_addr(to_string(v), conf.remote_addr + j);
+                        char *addr_str = to_string(v);
+                        parse_addr(addr_str, conf.remote_addr + j);
+                        ss_free(addr_str);
                         conf.remote_num = j + 1;
                     }
                 } else if (value->type == json_string) {
@@ -181,15 +198,37 @@ jconf_t *read_jconf(const char *file)
                 conf.local_port = to_string(value);
             } else if (strcmp(name, "password") == 0) {
                 conf.password = to_string(value);
+            } else if (strcmp(name, "key") == 0) {
+                conf.key = to_string(value);
             } else if (strcmp(name, "method") == 0) {
                 conf.method = to_string(value);
             } else if (strcmp(name, "timeout") == 0) {
                 conf.timeout = to_string(value);
+            } else if (strcmp(name, "user") == 0) {
+                conf.user = to_string(value);
+            } else if (strcmp(name, "plugin") == 0) {
+                conf.plugin = to_string(value);
+                if (strlen(conf.plugin) == 0) {
+                    ss_free(conf.plugin);
+                    conf.plugin = NULL;
+                }
+            } else if (strcmp(name, "plugin_opts") == 0) {
+                conf.plugin_opts = to_string(value);
             } else if (strcmp(name, "fast_open") == 0) {
+                check_json_value_type(value, json_boolean,
+                        "invalid config file: option 'fast_open' must be a boolean");
                 conf.fast_open = value->u.boolean;
+            } else if (strcmp(name, "reuse_port") == 0) {
+                check_json_value_type(value, json_boolean,
+                        "invalid config file: option 'reuse_port' must be a boolean");
+                conf.reuse_port = value->u.boolean;
             } else if (strcmp(name, "auth") == 0) {
+                check_json_value_type(value, json_boolean,
+                        "invalid config file: option 'auth' must be a boolean");
                 conf.auth = value->u.boolean;
             } else if (strcmp(name, "nofile") == 0) {
+                check_json_value_type(value, json_integer,
+                    "invalid config file: option 'nofile' must be an integer");
                 conf.nofile = value->u.integer;
             } else if (strcmp(name, "nameserver") == 0) {
                 conf.nameserver = to_string(value);
@@ -207,11 +246,19 @@ jconf_t *read_jconf(const char *file)
                 else
                     LOGI("ignore unknown mode: %s, use tcp_only as fallback",
                          mode_str);
-                free(mode_str);
+                ss_free(mode_str);
             } else if (strcmp(name, "mtu") == 0) {
+                check_json_value_type(value, json_integer,
+                    "invalid config file: option 'mtu' must be an integer");
                 conf.mtu = value->u.integer;
             } else if (strcmp(name, "mptcp") == 0) {
+                check_json_value_type(value, json_boolean,
+                    "invalid config file: option 'mptcp' must be a boolean");
                 conf.mptcp = value->u.boolean;
+            } else if (strcmp(name, "ipv6_first") == 0) {
+                check_json_value_type(value, json_boolean,
+                    "invalid config file: option 'ipv6_first' must be a boolean");
+                conf.ipv6_first = value->u.boolean;
             }
         }
     } else {
