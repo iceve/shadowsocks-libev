@@ -1,7 +1,7 @@
 /*
  * tunnel.h - Define tunnel's buffers and callbacks
  *
- * Copyright (C) 2013 - 2017, Max Lv <max.c.lv@gmail.com>
+ * Copyright (C) 2013 - 2018, Max Lv <max.c.lv@gmail.com>
  *
  * This file is part of the shadowsocks-libev.
  *
@@ -23,7 +23,12 @@
 #ifndef _TUNNEL_H
 #define _TUNNEL_H
 
+#ifdef HAVE_LIBEV_EV_H
+#include <libev/ev.h>
+#else
 #include <ev.h>
+#endif
+
 #include "crypto.h"
 #include "jconf.h"
 
